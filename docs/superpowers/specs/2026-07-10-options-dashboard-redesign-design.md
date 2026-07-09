@@ -38,6 +38,18 @@ Use large typography, narrative sections, and a portfolio-style first viewport. 
 
 ## Approved Design
 
+### Design Tooling Inputs
+
+The redesign will use the following design references before implementation:
+
+- `ui-ux-pro-max` design system query: `quant finance options pricing portfolio risk dashboard dark professional dense`, with variance `6`, motion `2`, and density `9`.
+- UI/UX Pro selected style: `Data-Dense Dashboard`, emphasizing KPI cards, compact tables, multiple chart widgets, 8-12px grid rhythm, and maximum information density without sacrificing readability.
+- UI/UX Pro selected palette direction: near-black navy background `#020617`, dark slate surfaces `#0F172A` and `#1E293B`, foreground `#F8FAFC`, border `#334155`, success `#22C55E`, destructive `#EF4444`.
+- UI/UX Pro chart guidance: keep line charts for time series, heatmaps for price/correlation matrices, bar charts for model and stress comparisons, legends visible, exact values available through hover/table fallbacks, and color not used as the only signal.
+- UI/UX Pro UX guidance: show loading feedback for async operations, avoid decorative continuous animation, keep motion subtle, preserve focus states, and maintain accessible contrast in dark mode.
+- `21st.dev` AI sketch project: `https://21st.dev/ai/6c387650-a42b-4d6c-8147-65d4aff5b2d1`. The board was created successfully, but the generated takes were not available to fetch in this environment because the in-app browser backend was unavailable to open/render the preview.
+- `21st.dev` catalog references found through CLI search: `Financial Dashboard`, `Finance Chart`, `Financial Markets Table`, `Analytics Dashboard`, `Dashboard Sidebar`, and `Efferd Dashboard 2`. These are React/shadcn/Tailwind references, so they should guide hierarchy and polish rather than be pasted into the Streamlit app.
+
 ### Visual System
 
 The dashboard will use a dark layered palette:
@@ -71,6 +83,7 @@ Inputs remain on the `Inputs & Greeks` tab to avoid reworking the application st
 - Chart guides: compact dark guide chips that support interpretation without competing with charts.
 - Buttons and upload controls: professional dark controls with clear hover and focus states.
 - Dialogs: dark modal styling aligned with the rest of the app.
+- Loading, info, warning, and error states: readable in dark mode with clear recovery text and sufficient contrast.
 
 ### Plotly Theme
 
@@ -118,5 +131,6 @@ The implementation should stay scoped mainly to `app/options_dashboard.py`:
 - Replace `st.title` with a custom header renderer.
 - Extend or replace `apply_theme` CSS.
 - Update chart color references where semantic risk coloring matters.
+- Use UI/UX Pro Max as the design QA checklist for density, contrast, chart semantics, loading states, and responsive behavior.
+- Use 21st.dev outputs as visual reference only; do not add a React/shadcn/Tailwind stack to this Streamlit project.
 - Keep computational functions and tests untouched unless a test import reveals a real issue.
-
