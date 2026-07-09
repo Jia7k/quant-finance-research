@@ -6,9 +6,9 @@ The project contains a Streamlit dashboard at `app/options_dashboard.py` for opt
 
 ## Goal
 
-Redesign the existing Streamlit dashboard with a darker professional trading/research terminal aesthetic:
+Redesign the existing Streamlit dashboard with a light institutional analytics aesthetic:
 
-- Make the first impression more serious, dense, and portfolio-ready.
+- Make the first impression cleaner, more serious, and portfolio-ready.
 - Improve visual hierarchy for headline metrics, tabs, controls, tables, and charts.
 - Keep the app usable for repeated analysis rather than turning it into a marketing page.
 - Preserve all current business logic, model calculations, user inputs, and chart interpretation behavior.
@@ -44,29 +44,29 @@ The redesign will use the following design references before implementation:
 
 - `ui-ux-pro-max` design system query: `quant finance options pricing portfolio risk dashboard dark professional dense`, with variance `6`, motion `2`, and density `9`.
 - UI/UX Pro selected style: `Data-Dense Dashboard`, emphasizing KPI cards, compact tables, multiple chart widgets, 8-12px grid rhythm, and maximum information density without sacrificing readability.
-- UI/UX Pro selected palette direction: near-black navy background `#020617`, dark slate surfaces `#0F172A` and `#1E293B`, foreground `#F8FAFC`, border `#334155`, success `#22C55E`, destructive `#EF4444`.
+- UI/UX Pro selected palette direction: institutional analytics colors with background `#F8FAFC`, white cards, navy text, blue accents, muted blue-gray borders, success green, and destructive red.
 - UI/UX Pro chart guidance: keep line charts for time series, heatmaps for price/correlation matrices, bar charts for model and stress comparisons, legends visible, exact values available through hover/table fallbacks, and color not used as the only signal.
-- UI/UX Pro UX guidance: show loading feedback for async operations, avoid decorative continuous animation, keep motion subtle, preserve focus states, and maintain accessible contrast in dark mode.
+- UI/UX Pro UX guidance: show loading feedback for async operations, avoid decorative continuous animation, keep motion subtle, preserve focus states, and maintain accessible contrast.
 - `21st.dev` AI sketch project: `https://21st.dev/ai/6c387650-a42b-4d6c-8147-65d4aff5b2d1`. The board was created successfully, but the generated takes were not available to fetch in this environment because the in-app browser backend was unavailable to open/render the preview.
 - `21st.dev` catalog references found through CLI search: `Financial Dashboard`, `Finance Chart`, `Financial Markets Table`, `Analytics Dashboard`, `Dashboard Sidebar`, and `Efferd Dashboard 2`. These are React/shadcn/Tailwind references, so they should guide hierarchy and polish rather than be pasted into the Streamlit app.
 
 ### Visual System
 
-The dashboard will use a dark layered palette:
+The dashboard will use a light institutional palette:
 
-- App background: near-black navy.
-- Primary surfaces: dark blue-gray panels.
-- Secondary surfaces: slightly lighter cards and controls.
-- Borders: low-contrast slate lines.
-- Primary accent: cyan/blue for analytical focus.
-- Secondary accent: amber for model or warning emphasis.
+- App background: cool off-white.
+- Primary surfaces: white cards and chart panels.
+- Secondary surfaces: pale blue-gray panels and controls.
+- Borders: muted blue-gray lines.
+- Primary accent: deep institutional blue for selected states and analytical focus.
+- Secondary accent: amber only for model or warning emphasis.
 - Risk colors: green for positive values, red for losses and stress.
 
 Typography will use the existing system font stack with tighter weights and spacing. Text remains ASCII-only in source. Headings should be compact and dashboard-like, not oversized hero text.
 
 ### Layout
 
-The top of the app will become a command-center header:
+The top of the app will become a compact institutional header:
 
 - Product name: `Quant Finance Lab`.
 - Short subtitle describing pricing, hedging, and portfolio risk research.
@@ -89,10 +89,10 @@ Inputs remain on the `Inputs & Greeks` tab to avoid reworking the application st
 
 Charts will be rethemed to match the app:
 
-- Dark paper and plot backgrounds.
-- Slate grid lines and axis lines.
-- Cyan, blue, amber, green, red, and violet chart colorway.
-- Dark hover labels.
+- White paper and plot backgrounds.
+- Pale slate grid lines and axis lines.
+- Blue-led chart colorway with restrained amber, green, red, and slate accents.
+- Light hover labels.
 - Horizontal legends with compact typography.
 - Heatmaps updated to professional diverging or sequential scales.
 
