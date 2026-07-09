@@ -1,17 +1,54 @@
-# Quant Factor Research
+# Quant Finance Research
 
-A reproducible cross-sectional equity factor research project. The goal is to test whether simple, economically interpretable signals can rank a stock universe and produce a long/short portfolio after transaction costs.
+A reproducible quant finance research portfolio with Python notebooks and tested source code. The repo currently covers cross-sectional equity factor research and student-style options pricing papers.
 
 This is built as a portfolio project for quant research / quant trading applications. It emphasizes point-in-time signal construction, walk-forward testing, transaction costs, and clear research reporting rather than a black-box "stock predictor."
 
-## Options Pricing Paper Notebook
+## Interactive Options Pricing Dashboard
 
-The repo also includes a paper-style options pricing notebook:
+The repo includes a Streamlit dashboard that turns the options pricing code into an interactive app:
+
+- Black-Scholes price and Greeks
+- Model comparison across Black-Scholes, CRR binomial, and Heston Monte Carlo
+- Strike/volatility price heatmap
+- Synthetic implied-volatility smile
+- Knock-out barrier option comparison
+- Delta-hedging simulator for a dynamically hedged short option
+- Portfolio analytics from manual Yahoo Finance tickers or CSV upload
+- Allocation, cumulative return, drawdown, and correlation charts
+- Rolling portfolio volatility and rolling average correlation
+- Scenario stress testing with editable per-ticker price shocks
+
+Run it locally:
+
+```bash
+pip install -e ".[dashboard]"
+streamlit run app/options_dashboard.py
+```
+
+Portfolio CSVs can use columns like:
+
+```csv
+ticker,quantity
+AAPL,5
+MSFT,3
+D05.SI,100
+```
+
+## Options Pricing Paper Notebooks
+
+The repo includes semi-learning options pricing notebooks written in a student research-note style:
 
 - `notebooks/black_scholes_pricing_paper.ipynb`
+- `notebooks/binomial_tree_learning_paper.ipynb`
+- `notebooks/barrier_options_learning_paper.ipynb`
+- `notebooks/heston_model_learning_paper.ipynb`
 - `src/options_pricing_research/black_scholes.py`
+- `src/options_pricing_research/binomial.py`
+- `src/options_pricing_research/monte_carlo.py`
+- `src/options_pricing_research/heston.py`
 
-It covers Black-Scholes-Merton pricing, Greeks, put-call parity, implied volatility inversion, and a Monte Carlo sanity check.
+The notebooks cover Black-Scholes-Merton pricing, Greeks, put-call parity, implied volatility, binomial trees, American exercise, barrier options, Monte Carlo path dependency, and a first look at stochastic volatility through the Heston model.
 
 To open it locally:
 
@@ -90,9 +127,30 @@ src/quant_factor_research/
   backtest.py    # Forward-return backtester with transaction costs
   metrics.py     # Performance and information coefficient analytics
   cli.py         # Reproducible command-line research runner
+src/options_pricing_research/
+  black_scholes.py
+  binomial.py
+  monte_carlo.py
+  heston.py
+  hedging.py
+  portfolio_lab.py
+  dashboard.py
+app/
+  options_dashboard.py
+notebooks/
+  black_scholes_pricing_paper.ipynb
+  binomial_tree_learning_paper.ipynb
+  barrier_options_learning_paper.ipynb
+  heston_model_learning_paper.ipynb
 tests/
   test_factors.py
   test_backtest.py
+  test_black_scholes.py
+  test_binomial.py
+  test_dashboard.py
+  test_hedging.py
+  test_portfolio_lab.py
+  test_monte_carlo_models.py
 ```
 
 ## Bias Controls
