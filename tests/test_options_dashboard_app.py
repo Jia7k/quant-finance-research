@@ -3,11 +3,14 @@ import json
 import pandas as pd
 
 from app.options_dashboard import (
+    DASHBOARD_PAGES,
     RESEARCH_CASE_PRESETS,
     build_input_warnings,
     build_research_case_export,
+    build_research_memo,
     build_research_snapshot,
     build_stress_editor_frame,
+    get_default_inputs,
     get_research_case_preset,
     validate_portfolio_frame,
 )
@@ -133,3 +136,57 @@ def test_research_case_export_is_json_serializable():
     assert "Short-Dated Hedge Stress" not in payload
     assert export["warnings"] == ["Example warning"]
     assert export["base"]["kind"] == "call"
+
+
+def test_dashboard_pages_are_stable_and_include_report_workflow():
+    labels = [page["label"] for page in DASHBOARD_PAGES]
+
+    assert labels == [
+        "Portfolio",
+        "Strategy Builder",
+        "Model Comparison",
+        "Price Surface",
+        "IV Smile",
+        "Path Models",
+        "Delta Hedge",
+        "Inputs & Greeks",
+        "Report",
+    ]
+    assert len({page["key"] for page in DASHBOARD_PAGES}) == len(DASHBOARD_PAGES)
+
+
+def test_get_default_inputs_returns_complete_independent_case():
+    defaults = get_default_inputs()
+    defaults["base"]["spot"] = 1234.0
+
+    fresh = get_default_inputs()
+
+    assert REQUIRED_INPUT_KEYS.issubset(fresh)
+    assert fresh["base"]["spot"] == 100.0
+
+
+def test_build_research_memo_degrades_without_optional_sections():
+    inputs = get_default_inputs()
+    snapshot = {
+        "classification": "ATM call",
+        "moneyness": "1.0000",
+        "breakeven": "105.0000",
+        "premium_pct_spot": "5.00%",
+        "largest_greek": "Delta",
+        "largest_greek_value": "0.5000",
+        "hedge_cadence": "3.0 trading days",
+    }
+
+    memo = build_research_memo(
+        inputs,
+        snapshot=snapshot,
+        warnings=[],
+        model_prices=pd.DataFrame({"model": ["Black-Scholes"], "price": [5.0]}),
+        strategy_summary=None,
+        portfolio_summary=None,
+    )
+
+    assert memo.startswith("# Quant Finance Lab Research Memo")
+    assert "## Option Case" in memo
+    assert "No strategy has been built in this session." in memo
+    assert "No portfolio analysis has been run in this session." in memo

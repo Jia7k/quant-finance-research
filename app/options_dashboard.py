@@ -63,6 +63,18 @@ CHART_COLORS = [
     PALETTE["terracotta_dark"],
 ]
 
+DASHBOARD_PAGES = [
+    {"key": "portfolio", "label": "Portfolio"},
+    {"key": "strategy", "label": "Strategy Builder"},
+    {"key": "models", "label": "Model Comparison"},
+    {"key": "surface", "label": "Price Surface"},
+    {"key": "smile", "label": "IV Smile"},
+    {"key": "paths", "label": "Path Models"},
+    {"key": "hedge", "label": "Delta Hedge"},
+    {"key": "inputs", "label": "Inputs & Greeks"},
+    {"key": "report", "label": "Report"},
+]
+
 RESEARCH_CASE_PRESETS: dict[str, dict[str, object]] = {
     "Balanced ATM Call": {
         "base": {
@@ -192,6 +204,12 @@ def get_research_case_preset(name: str) -> dict[str, object]:
     fallback = "Balanced ATM Call"
     preset = RESEARCH_CASE_PRESETS.get(name, RESEARCH_CASE_PRESETS[fallback])
     return deepcopy(preset)
+
+
+def get_default_inputs() -> dict[str, object]:
+    """Return the default active research case."""
+
+    return get_research_case_preset("Balanced ATM Call")
 
 
 def build_research_snapshot(
@@ -339,6 +357,101 @@ def build_research_case_export(
         },
         "warnings": list(warnings),
     }
+
+
+def build_research_memo(
+    inputs: dict[str, object],
+    snapshot: dict[str, str],
+    warnings: list[str],
+    model_prices: pd.DataFrame,
+    strategy_summary: object | None = None,
+    portfolio_summary: dict[str, object] | None = None,
+) -> str:
+    """Build a downloadable Markdown memo for the current research state."""
+
+    base = inputs["base"]
+    lines = [
+        "# Quant Finance Lab Research Memo",
+        "",
+        "## Option Case",
+        "",
+        f"- Option: {base['kind']}",
+        f"- Spot: {float(base['spot']):.4f}",
+        f"- Strike: {float(base['strike']):.4f}",
+        f"- Maturity: {float(base['time_to_expiry']):.4f} years",
+        f"- Volatility: {float(base['volatility']):.2%}",
+        f"- Risk-free rate: {float(base['risk_free_rate']):.2%}",
+        f"- Dividend yield: {float(base['dividend_yield']):.2%}",
+        "",
+        "## Snapshot",
+        "",
+        f"- Classification: {snapshot['classification']}",
+        f"- Moneyness: {snapshot['moneyness']}",
+        f"- Breakeven: {snapshot['breakeven']}",
+        f"- Premium / spot: {snapshot['premium_pct_spot']}",
+        f"- Largest Greek: {snapshot['largest_greek']} ({snapshot['largest_greek_value']})",
+        f"- Hedge cadence: {snapshot['hedge_cadence']}",
+        "",
+        "## Assumption Checks",
+        "",
+    ]
+    if warnings:
+        lines.extend(f"- {warning}" for warning in warnings)
+    else:
+        lines.append("- No input warnings.")
+
+    lines.extend(["", "## Model Prices", "", _markdown_table(model_prices), "", "## Strategy", ""])
+    if strategy_summary is None:
+        lines.append("No strategy has been built in this session.")
+    else:
+        lines.extend(
+            [
+                f"- Entry cost: {_format_optional_number(getattr(strategy_summary, 'entry_cost', None))}",
+                f"- Max profit: {_format_optional_number(getattr(strategy_summary, 'max_profit', None))}",
+                f"- Max loss: {_format_optional_number(getattr(strategy_summary, 'max_loss', None))}",
+                f"- Risk: {getattr(strategy_summary, 'risk_label', 'Unavailable')}",
+                f"- Profit: {getattr(strategy_summary, 'profit_label', 'Unavailable')}",
+            ]
+        )
+
+    lines.extend(["", "## Portfolio", ""])
+    if portfolio_summary is None:
+        lines.append("No portfolio analysis has been run in this session.")
+    else:
+        for key, value in portfolio_summary.items():
+            lines.append(f"- {key}: {value}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _markdown_table(frame: pd.DataFrame) -> str:
+    if frame.empty:
+        return "_No rows available._"
+
+    display = frame.copy()
+    display.columns = [str(column) for column in display.columns]
+    rows = [
+        "| " + " | ".join(display.columns) + " |",
+        "| " + " | ".join("---" for _ in display.columns) + " |",
+    ]
+    for row in display.itertuples(index=False):
+        values = [_format_markdown_cell(value) for value in row]
+        rows.append("| " + " | ".join(values) + " |")
+    return "\n".join(rows)
+
+
+def _format_markdown_cell(value: object) -> str:
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value).replace("|", "\\|")
+
+
+def _format_optional_number(value: object | None) -> str:
+    if value is None:
+        return "Unbounded"
+    if isinstance(value, (float, int)):
+        return f"{value:,.4f}"
+    return str(value)
 
 
 def _normalize_dashboard_column(column: object) -> str:

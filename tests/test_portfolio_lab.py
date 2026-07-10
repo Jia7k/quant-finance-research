@@ -4,9 +4,11 @@ from options_pricing_research.portfolio_lab import (
     build_portfolio_report,
     normalize_portfolio,
     performance_summary,
+    risk_contribution,
     rolling_average_correlation,
     rolling_portfolio_volatility,
     stress_test_portfolio,
+    worst_day_contribution,
 )
 
 
@@ -112,3 +114,45 @@ def test_stress_test_portfolio_applies_ticker_shocks():
     assert stress.loc[stress["ticker"] == "AAA", "stress_pnl"].iloc[0] == -60.0
     assert stress.loc[stress["ticker"] == "BBB", "stress_pnl"].iloc[0] == 20.0
     assert round(stress["portfolio_impact"].sum(), 6) == -0.04
+
+
+def test_risk_contribution_reports_component_volatility_share():
+    asset_returns = pd.DataFrame(
+        {
+            "AAA": [0.01, -0.01, 0.02, -0.02, 0.01],
+            "BBB": [0.004, -0.003, 0.005, -0.004, 0.002],
+        }
+    )
+    weights = pd.Series({"AAA": 0.7, "BBB": 0.3})
+
+    contribution = risk_contribution(asset_returns, weights)
+
+    assert set(contribution.columns) == {
+        "ticker",
+        "weight",
+        "annualized_volatility",
+        "volatility_contribution",
+        "contribution_pct",
+    }
+    assert round(contribution["contribution_pct"].sum(), 6) == 1.0
+    assert contribution.iloc[0]["ticker"] == "AAA"
+
+
+def test_worst_day_contribution_uses_weighted_asset_returns():
+    dates = pd.bdate_range("2024-01-01", periods=3)
+    asset_returns = pd.DataFrame(
+        {
+            "AAA": [0.01, -0.10, 0.02],
+            "BBB": [0.02, -0.05, 0.01],
+        },
+        index=dates,
+    )
+    weights = pd.Series({"AAA": 0.6, "BBB": 0.4})
+    portfolio_returns = asset_returns.mul(weights, axis=1).sum(axis=1)
+
+    contribution = worst_day_contribution(asset_returns, weights, portfolio_returns)
+
+    assert contribution["date"].nunique() == 1
+    assert contribution["date"].iloc[0] == dates[1]
+    assert round(contribution["return_contribution"].sum(), 6) == round(portfolio_returns.iloc[1], 6)
+    assert contribution.iloc[0]["ticker"] == "AAA"

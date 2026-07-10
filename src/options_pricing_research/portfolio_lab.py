@@ -241,6 +241,72 @@ def stress_test_portfolio(
     return frame
 
 
+def risk_contribution(
+    asset_returns: pd.DataFrame,
+    weights: pd.Series,
+    periods_per_year: int = 252,
+) -> pd.DataFrame:
+    """Estimate each holding's contribution to annualized portfolio volatility."""
+
+    returns = asset_returns.reindex(columns=weights.index).dropna(how="all").fillna(0.0)
+    if returns.empty:
+        raise ValueError("asset_returns is empty.")
+
+    aligned_weights = weights.reindex(returns.columns).astype(float).fillna(0.0)
+    covariance = returns.cov(ddof=0) * periods_per_year
+    portfolio_variance = float(aligned_weights.T @ covariance @ aligned_weights)
+    if portfolio_variance <= 0:
+        contributions = pd.Series(0.0, index=aligned_weights.index)
+        annualized_volatility = pd.Series(0.0, index=aligned_weights.index)
+    else:
+        marginal = covariance @ aligned_weights
+        contributions = aligned_weights * marginal / np.sqrt(portfolio_variance)
+        annualized_volatility = np.sqrt(np.diag(covariance))
+
+    total_contribution = contributions.sum()
+    if np.isclose(total_contribution, 0.0):
+        contribution_pct = pd.Series(0.0, index=contributions.index)
+    else:
+        contribution_pct = contributions / total_contribution
+
+    frame = pd.DataFrame(
+        {
+            "ticker": aligned_weights.index,
+            "weight": aligned_weights.values,
+            "annualized_volatility": annualized_volatility,
+            "volatility_contribution": contributions.values,
+            "contribution_pct": contribution_pct.values,
+        }
+    )
+    return frame.sort_values("contribution_pct", ascending=False).reset_index(drop=True)
+
+
+def worst_day_contribution(
+    asset_returns: pd.DataFrame,
+    weights: pd.Series,
+    portfolio_returns: pd.Series,
+) -> pd.DataFrame:
+    """Break the worst portfolio-return day into weighted ticker contributions."""
+
+    returns = asset_returns.reindex(columns=weights.index).fillna(0.0)
+    if returns.empty or portfolio_returns.empty:
+        raise ValueError("Return series are empty.")
+
+    worst_date = portfolio_returns.idxmin()
+    aligned_weights = weights.reindex(returns.columns).astype(float).fillna(0.0)
+    weighted_returns = returns.loc[worst_date].mul(aligned_weights)
+    frame = pd.DataFrame(
+        {
+            "date": worst_date,
+            "ticker": weighted_returns.index,
+            "asset_return": returns.loc[worst_date].values,
+            "weight": aligned_weights.values,
+            "return_contribution": weighted_returns.values,
+        }
+    )
+    return frame.sort_values("return_contribution", ascending=True).reset_index(drop=True)
+
+
 def performance_summary(
     returns: pd.Series,
     risk_free_rate: float = 0.0,
