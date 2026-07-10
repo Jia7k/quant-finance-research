@@ -6,6 +6,8 @@ from app.options_dashboard import (
     DASHBOARD_PAGES,
     RESEARCH_CASE_PRESETS,
     build_input_warnings,
+    build_option_scenario_grid,
+    build_probability_snapshot,
     build_research_case_export,
     build_research_memo,
     build_research_snapshot,
@@ -144,6 +146,7 @@ def test_dashboard_pages_are_stable_and_include_report_workflow():
     assert labels == [
         "Portfolio",
         "Strategy Builder",
+        "Scenario Matrix",
         "Model Comparison",
         "Price Surface",
         "IV Smile",
@@ -190,3 +193,37 @@ def test_build_research_memo_degrades_without_optional_sections():
     assert "## Option Case" in memo
     assert "No strategy has been built in this session." in memo
     assert "No portfolio analysis has been run in this session." in memo
+
+
+def test_build_probability_snapshot_reports_expected_move_and_probabilities():
+    inputs = get_default_inputs()
+
+    snapshot = build_probability_snapshot(inputs, option_price=10.0)
+
+    assert snapshot["expected_move"] > 0.0
+    assert 0.0 < snapshot["probability_itm"] < 1.0
+    assert 0.0 < snapshot["probability_profit"] < 1.0
+    assert snapshot["breakeven"] == 110.0
+
+
+def test_build_option_scenario_grid_returns_price_and_delta_rows():
+    inputs = get_default_inputs()
+    spot_shocks = [-0.1, 0.0, 0.1]
+    vol_shocks = [-0.05, 0.0, 0.05]
+
+    grid = build_option_scenario_grid(inputs, spot_shocks, vol_shocks)
+
+    assert set(grid.columns) == {
+        "spot_shock",
+        "vol_shock",
+        "spot",
+        "volatility",
+        "price",
+        "delta",
+        "gamma",
+        "vega_per_1pct",
+    }
+    assert len(grid) == 9
+    assert grid.loc[(grid["spot_shock"] == 0.1) & (grid["vol_shock"] == 0.0), "price"].iloc[0] > grid.loc[
+        (grid["spot_shock"] == -0.1) & (grid["vol_shock"] == 0.0), "price"
+    ].iloc[0]

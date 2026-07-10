@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import date, timedelta
 import json
+from math import erf, log, sqrt
 from pathlib import Path
 import sys
 
@@ -75,6 +76,7 @@ CHART_COLORS = [
 DASHBOARD_PAGES = [
     {"key": "portfolio", "label": "Portfolio"},
     {"key": "strategy", "label": "Strategy Builder"},
+    {"key": "scenario", "label": "Scenario Matrix"},
     {"key": "models", "label": "Model Comparison"},
     {"key": "surface", "label": "Price Surface"},
     {"key": "smile", "label": "IV Smile"},
@@ -268,6 +270,108 @@ def build_research_snapshot(
         "largest_greek_value": f"{greeks[largest_greek_key]:,.4f}",
         "hedge_cadence": f"{hedge_cadence:.1f} trading days",
     }
+
+
+def build_probability_snapshot(
+    inputs: dict[str, object],
+    option_price: float,
+) -> dict[str, float]:
+    """Estimate expected move and risk-neutral finishing probabilities."""
+
+    base = inputs["base"]
+    kind = str(base["kind"])
+    spot = float(base["spot"])
+    strike = float(base["strike"])
+    maturity = float(base["time_to_expiry"])
+    rate = float(base["risk_free_rate"])
+    volatility = float(base["volatility"])
+    dividend_yield = float(base["dividend_yield"])
+    expected_move = spot * volatility * sqrt(maturity)
+    breakeven = strike + option_price if kind == "call" else strike - option_price
+
+    probability_itm = _risk_neutral_probability_above(
+        spot,
+        strike,
+        maturity,
+        rate,
+        volatility,
+        dividend_yield,
+    )
+    probability_profit = _risk_neutral_probability_above(
+        spot,
+        breakeven,
+        maturity,
+        rate,
+        volatility,
+        dividend_yield,
+    )
+    if kind == "put":
+        probability_itm = 1.0 - probability_itm
+        probability_profit = 1.0 - probability_profit
+
+    return {
+        "expected_move": expected_move,
+        "expected_move_pct": expected_move / spot,
+        "lower_one_sigma": max(0.0, spot - expected_move),
+        "upper_one_sigma": spot + expected_move,
+        "breakeven": breakeven,
+        "probability_itm": probability_itm,
+        "probability_profit": probability_profit,
+    }
+
+
+def build_option_scenario_grid(
+    inputs: dict[str, object],
+    spot_shocks: list[float],
+    vol_shocks: list[float],
+) -> pd.DataFrame:
+    """Reprice the active option across spot and volatility shocks."""
+
+    base = inputs["base"]
+    rows = []
+    for spot_shock in spot_shocks:
+        shocked_spot = float(base["spot"]) * (1.0 + spot_shock)
+        for vol_shock in vol_shocks:
+            shocked_volatility = max(0.01, float(base["volatility"]) + vol_shock)
+            shocked_base = dict(base)
+            shocked_base["spot"] = shocked_spot
+            shocked_base["volatility"] = shocked_volatility
+            price, greeks = option_metrics(**shocked_base)
+            rows.append(
+                {
+                    "spot_shock": spot_shock,
+                    "vol_shock": vol_shock,
+                    "spot": shocked_spot,
+                    "volatility": shocked_volatility,
+                    "price": price,
+                    "delta": float(greeks["delta"]),
+                    "gamma": float(greeks["gamma"]),
+                    "vega_per_1pct": float(greeks["vega_per_1pct"]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _risk_neutral_probability_above(
+    spot: float,
+    threshold: float,
+    maturity: float,
+    risk_free_rate: float,
+    volatility: float,
+    dividend_yield: float,
+) -> float:
+    if threshold <= 0:
+        return 1.0
+    denominator = volatility * sqrt(maturity)
+    d2 = (
+        log(spot / threshold)
+        + (risk_free_rate - dividend_yield - 0.5 * volatility**2) * maturity
+    ) / denominator
+    return _normal_cdf(d2)
+
+
+def _normal_cdf(value: float) -> float:
+    return 0.5 * (1.0 + erf(value / sqrt(2.0)))
 
 
 def build_input_warnings(inputs: dict[str, object]) -> list[str]:
@@ -497,6 +601,9 @@ def main() -> None:
     elif selected_page == "Strategy Builder":
         render_current_case_strip(inputs)
         render_strategy_builder(inputs)
+    elif selected_page == "Scenario Matrix":
+        render_current_case_strip(inputs)
+        render_scenario_matrix(inputs)
     elif selected_page == "Model Comparison":
         render_current_case_strip(inputs)
         render_model_comparison(inputs)
@@ -2489,6 +2596,114 @@ def _strategy_legs_from_frame(frame: pd.DataFrame) -> list[OptionLeg]:
             )
         )
     return legs
+
+
+def render_scenario_matrix(inputs: dict[str, object]) -> None:
+    st.subheader("Scenario Matrix")
+    price, greeks = option_metrics(**inputs["base"])
+    probabilities = build_probability_snapshot(inputs, price)
+    spot_shocks = [-0.20, -0.10, -0.05, 0.0, 0.05, 0.10, 0.20]
+    vol_shocks = [-0.15, -0.10, -0.05, 0.0, 0.05, 0.10, 0.15]
+    scenario_grid = build_option_scenario_grid(inputs, spot_shocks, vol_shocks)
+
+    metric_cols = st.columns(5)
+    metric_cols[0].metric("Base price", f"{price:,.4f}")
+    metric_cols[1].metric("Expected move", f"{probabilities['expected_move']:,.2f}")
+    metric_cols[2].metric("One-sigma band", f"{probabilities['lower_one_sigma']:,.2f} - {probabilities['upper_one_sigma']:,.2f}")
+    metric_cols[3].metric("Prob. ITM", f"{probabilities['probability_itm']:.2%}")
+    metric_cols[4].metric("Prob. profit", f"{probabilities['probability_profit']:.2%}")
+
+    price_matrix = scenario_grid.pivot(index="vol_shock", columns="spot_shock", values="price")
+    delta_matrix = scenario_grid.pivot(index="vol_shock", columns="spot_shock", values="delta")
+    left, right = st.columns(2)
+    with left:
+        fig = go.Figure(
+            go.Heatmap(
+                z=price_matrix.values,
+                x=[f"{value:+.0%}" for value in price_matrix.columns],
+                y=[f"{value:+.0%}" for value in price_matrix.index],
+                colorscale=[
+                    [0.0, PALETTE["surface_warm"]],
+                    [0.5, "#DBEAFE"],
+                    [1.0, PALETTE["sage_dark"]],
+                ],
+                colorbar={"title": "Price"},
+                text=format_heatmap_text(price_matrix.values, decimals=2),
+                texttemplate="%{text}",
+                textfont={"color": PALETTE["charcoal"], "size": 11},
+                hovertemplate="Spot shock: %{x}<br>Vol shock: %{y}<br>Price: %{z:.4f}<extra></extra>",
+            )
+        )
+        fig.update_xaxes(title="Spot shock")
+        fig.update_yaxes(title="Vol shock")
+        apply_plotly_theme(fig, "Option Price Shock Matrix", height=430)
+        st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
+
+    with right:
+        fig = go.Figure(
+            go.Heatmap(
+                z=delta_matrix.values,
+                x=[f"{value:+.0%}" for value in delta_matrix.columns],
+                y=[f"{value:+.0%}" for value in delta_matrix.index],
+                zmin=-1,
+                zmax=1,
+                zmid=0,
+                colorscale=[
+                    [0.0, PALETTE["terracotta_dark"]],
+                    [0.5, PALETTE["surface_warm"]],
+                    [1.0, PALETTE["sage"]],
+                ],
+                colorbar={"title": "Delta"},
+                text=format_heatmap_text(delta_matrix.values, decimals=2),
+                texttemplate="%{text}",
+                textfont={"color": PALETTE["charcoal"], "size": 11},
+                hovertemplate="Spot shock: %{x}<br>Vol shock: %{y}<br>Delta: %{z:.4f}<extra></extra>",
+            )
+        )
+        fig.update_xaxes(title="Spot shock")
+        fig.update_yaxes(title="Vol shock")
+        apply_plotly_theme(fig, "Delta Shock Matrix", height=430)
+        st.plotly_chart(fig, width="stretch", config={"displaylogo": False})
+
+    display = scenario_grid.copy()
+    display["spot_shock_pct"] = display["spot_shock"] * 100.0
+    display["vol_shock_pct"] = display["vol_shock"] * 100.0
+    display["volatility_pct"] = display["volatility"] * 100.0
+    st.dataframe(
+        display[
+            [
+                "spot_shock_pct",
+                "vol_shock_pct",
+                "spot",
+                "volatility_pct",
+                "price",
+                "delta",
+                "gamma",
+                "vega_per_1pct",
+            ]
+        ],
+        width="stretch",
+        hide_index=True,
+        height=360,
+        column_config={
+            "spot_shock_pct": st.column_config.NumberColumn("Spot shock", format="%.0f%%"),
+            "vol_shock_pct": st.column_config.NumberColumn("Vol shock", format="%.0f pts"),
+            "spot": st.column_config.NumberColumn("Spot", format="%.2f"),
+            "volatility_pct": st.column_config.NumberColumn("Volatility", format="%.2f%%"),
+            "price": st.column_config.NumberColumn("Price", format="%.4f"),
+            "delta": st.column_config.NumberColumn("Delta", format="%.4f"),
+            "gamma": st.column_config.NumberColumn("Gamma", format="%.6f"),
+            "vega_per_1pct": st.column_config.NumberColumn("Vega / 1%", format="%.4f"),
+        },
+    )
+    st.download_button(
+        "Download scenario matrix CSV",
+        data=scenario_grid.to_csv(index=False),
+        file_name="option_scenario_matrix.csv",
+        mime="text/csv",
+        key="download_option_scenario_matrix",
+        width="stretch",
+    )
 
 
 def render_portfolio_lab(inputs: dict[str, object]) -> None:

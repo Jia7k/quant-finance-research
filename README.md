@@ -11,6 +11,7 @@ The repo includes a Streamlit dashboard that turns the options pricing code into
 - Black-Scholes price and Greeks
 - Model comparison across Black-Scholes, CRR binomial, and Heston Monte Carlo
 - Multi-leg options strategy builder with payoff, breakevens, and combined Greeks
+- Scenario matrix for spot/volatility shocks, expected move, and probability estimates
 - Strike/volatility price heatmap
 - Synthetic implied-volatility smile
 - Knock-out barrier option comparison
