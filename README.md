@@ -10,14 +10,17 @@ The repo includes a Streamlit dashboard that turns the options pricing code into
 
 - Black-Scholes price and Greeks
 - Model comparison across Black-Scholes, CRR binomial, and Heston Monte Carlo
+- Multi-leg options strategy builder with payoff, breakevens, and combined Greeks
 - Strike/volatility price heatmap
 - Synthetic implied-volatility smile
 - Knock-out barrier option comparison
 - Delta-hedging simulator for a dynamically hedged short option
 - Portfolio analytics from manual Yahoo Finance tickers or CSV upload
 - Allocation, cumulative return, drawdown, and correlation charts
+- Volatility and worst-day risk attribution by holding
 - Rolling portfolio volatility and rolling average correlation
 - Scenario stress testing with editable per-ticker price shocks
+- Downloadable research memo for the active case
 
 Run it locally:
 

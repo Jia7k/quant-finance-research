@@ -29,9 +29,18 @@ from options_pricing_research.portfolio_lab import (  # noqa: E402
     build_portfolio_report,
     download_adjusted_close,
     normalize_portfolio,
+    risk_contribution,
     rolling_average_correlation,
     rolling_portfolio_volatility,
     stress_test_portfolio,
+    worst_day_contribution,
+)
+from options_pricing_research.strategies import (  # noqa: E402
+    OptionLeg,
+    aggregate_strategy_greeks,
+    payoff_table,
+    strategy_presets,
+    summarize_strategy,
 )
 
 PALETTE = {
@@ -469,47 +478,64 @@ st.set_page_config(
 def main() -> None:
     apply_theme()
     render_app_header()
+    ensure_session_defaults()
 
-    (
-        portfolio_tab,
-        overview_tab,
-        surface_tab,
-        smile_tab,
-        exotic_tab,
-        hedge_tab,
-        inputs_tab,
-    ) = st.tabs(
-        [
-            "Portfolio",
-            "Model Comparison",
-            "Price Surface",
-            "IV Smile",
-            "Path Models",
-            "Delta Hedge",
-            "Inputs & Greeks",
-        ]
+    page_labels = [page["label"] for page in DASHBOARD_PAGES]
+    selected_page = st.segmented_control(
+        "Workspace",
+        page_labels,
+        default=st.session_state.get("dashboard_page", "Portfolio"),
+        key="dashboard_page",
     )
+    inputs = st.session_state["active_inputs"]
 
-    with inputs_tab:
+    if selected_page == "Inputs & Greeks":
         inputs = render_inputs_and_greeks()
-
-    with portfolio_tab:
+    elif selected_page == "Portfolio":
+        render_current_case_strip(inputs)
         render_portfolio_lab(inputs)
-
-    with overview_tab:
+    elif selected_page == "Strategy Builder":
+        render_current_case_strip(inputs)
+        render_strategy_builder(inputs)
+    elif selected_page == "Model Comparison":
+        render_current_case_strip(inputs)
         render_model_comparison(inputs)
-
-    with surface_tab:
+    elif selected_page == "Price Surface":
+        render_current_case_strip(inputs)
         render_surface(inputs)
-
-    with smile_tab:
+    elif selected_page == "IV Smile":
+        render_current_case_strip(inputs)
         render_smile(inputs)
-
-    with exotic_tab:
+    elif selected_page == "Path Models":
+        render_current_case_strip(inputs)
         render_path_models(inputs)
-
-    with hedge_tab:
+    elif selected_page == "Delta Hedge":
+        render_current_case_strip(inputs)
         render_delta_hedge(inputs)
+    elif selected_page == "Report":
+        render_current_case_strip(inputs)
+        render_report_mode(inputs)
+
+
+def ensure_session_defaults() -> None:
+    if "active_inputs" not in st.session_state:
+        st.session_state["active_inputs"] = get_default_inputs()
+    if "latest_strategy_summary" not in st.session_state:
+        st.session_state["latest_strategy_summary"] = None
+    if "latest_portfolio_summary" not in st.session_state:
+        st.session_state["latest_portfolio_summary"] = None
+
+
+def render_current_case_strip(inputs: dict[str, object]) -> None:
+    base = inputs["base"]
+    st.caption(
+        "Current case: "
+        f"{str(base['kind']).upper()} K {float(base['strike']):.2f}, "
+        f"spot {float(base['spot']):.2f}, "
+        f"vol {float(base['volatility']):.1%}, "
+        f"expiry {float(base['time_to_expiry']):.2f}y. "
+        "Use Inputs & Greeks to edit assumptions."
+    )
 
 
 def render_app_header() -> None:
@@ -706,6 +732,7 @@ def render_inputs_and_greeks() -> dict[str, object]:
         "drift": drift_pct / 100.0,
         "hedge_cost_bps": hedge_cost_bps,
     }
+    st.session_state["active_inputs"] = deepcopy(inputs)
     price, greeks = render_greek_metrics(inputs)
     warnings = build_input_warnings(inputs)
     render_research_snapshot(build_research_snapshot(inputs, price, greeks))
@@ -1308,6 +1335,22 @@ CHART_READING_GUIDES = {
         ],
         "footnote": "This averages the off-diagonal correlations, so self-correlation cells are excluded.",
     },
+    "risk_contribution": {
+        "items": [
+            ("Largest bar", "Main risk driver", "This ticker contributes the biggest share of portfolio volatility."),
+            ("Weight vs risk", "Not the same", "A smaller holding can dominate risk if it is volatile or highly correlated."),
+            ("Share sums", "Portfolio split", "Contribution percentages sum to the portfolio's volatility mix."),
+        ],
+        "footnote": "Volatility contribution uses the selected historical return window and current portfolio weights.",
+    },
+    "worst_day_contribution": {
+        "items": [
+            ("Most negative", "Largest drag", "This holding hurt the portfolio most on the worst return day."),
+            ("Positive bar", "Offset", "This holding helped cushion losses during that same day."),
+            ("Sum bars", "Worst-day return", "The weighted ticker contributions add back to the portfolio return."),
+        ],
+        "footnote": "Worst-day contribution explains one historical day, not every drawdown in the window.",
+    },
     "correlation": {
         "items": [
             ("+1.0", "Move together", "Both tickers' returns usually rise and fall in the same direction."),
@@ -1502,6 +1545,41 @@ CHART_GUIDES = {
             "Consider adding exposures with different return drivers if correlation remains high.",
         ],
     },
+    "risk_contribution": {
+        "title": "Volatility contribution",
+        "summary": (
+            "This chart decomposes portfolio volatility by holding. It helps identify "
+            "which names are driving risk after accounting for position weight and "
+            "historical co-movement."
+        ),
+        "technical": (
+            "The calculation uses the asset return covariance matrix and current weights. "
+            "Each component is weight multiplied by marginal contribution to portfolio "
+            "variance, scaled back to volatility units."
+        ),
+        "recommendations": [
+            "Compare contribution share against portfolio weight to find hidden risk concentration.",
+            "Reduce or hedge names whose risk contribution is much larger than intended.",
+            "Use this alongside correlation because high co-movement can amplify contribution.",
+        ],
+    },
+    "worst_day_contribution": {
+        "title": "Worst-day contribution",
+        "summary": (
+            "This chart breaks the portfolio's worst historical return day into ticker-level "
+            "weighted contributions. It shows which holdings caused the most damage on that date."
+        ),
+        "technical": (
+            "For the worst portfolio return date, each ticker contribution equals its daily "
+            "return multiplied by its portfolio weight. The sum equals the portfolio return "
+            "for that day."
+        ),
+        "recommendations": [
+            "Inspect whether the worst day came from one name or broad portfolio beta.",
+            "If one holding dominates, stress it separately before increasing size.",
+            "If many holdings lose together, correlation risk may matter more than weight alone.",
+        ],
+    },
     "correlation": {
         "title": "Return correlation heatmap",
         "summary": (
@@ -1655,6 +1733,16 @@ NUMBER_GUIDES = {
         "The y-axis is the average off-diagonal pairwise correlation. A value of 0.70 "
         "means holdings tended to move strongly together in that rolling window; a value "
         "near 0 means weaker shared movement."
+    ),
+    "risk_contribution": (
+        "The x-axis is each holding's share of portfolio volatility contribution. A value "
+        "of 0.40 means that ticker explains roughly 40% of the portfolio volatility under "
+        "the selected historical window and current weights."
+    ),
+    "worst_day_contribution": (
+        "The x-axis is weighted return contribution on the portfolio's worst return day. "
+        "Negative values pulled the portfolio down; positive values offset some of that "
+        "loss. The bars sum to the portfolio return for that date."
     ),
     "correlation": (
         "Each cell ranges from -1 to +1. Near +1 means two assets historically moved "
@@ -2279,6 +2367,130 @@ def render_model_comparison(inputs: dict[str, object]) -> None:
     render_explainable_chart(fig, "model_comparison", "Model Price Comparison")
 
 
+def render_strategy_builder(inputs: dict[str, object]) -> None:
+    st.subheader("Strategy Builder")
+    base = inputs["base"]
+    spot = float(base["spot"])
+    presets = strategy_presets(spot, float(base["volatility"]))
+    preset_name = st.selectbox("Strategy preset", list(presets), index=1)
+    default_legs = pd.DataFrame(
+        [
+            {
+                "kind": leg.kind,
+                "side": leg.side,
+                "strike": leg.strike,
+                "premium": leg.premium,
+                "quantity": leg.quantity,
+            }
+            for leg in presets[preset_name]
+        ]
+    )
+    edited_legs = st.data_editor(
+        default_legs,
+        key=f"strategy_legs_{_normalize_dashboard_column(preset_name)}",
+        num_rows="dynamic",
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "kind": st.column_config.SelectboxColumn("Kind", options=["call", "put"], required=True),
+            "side": st.column_config.SelectboxColumn("Side", options=["long", "short"], required=True),
+            "strike": st.column_config.NumberColumn("Strike", min_value=0.01, format="%.2f"),
+            "premium": st.column_config.NumberColumn("Premium", min_value=0.0, format="%.2f"),
+            "quantity": st.column_config.NumberColumn("Qty", min_value=0.01, format="%.2f"),
+        },
+    )
+    legs = _strategy_legs_from_frame(edited_legs)
+    if not legs:
+        st.info("Add at least one valid strategy leg.")
+        return
+
+    lower_bound = max(0.01, spot * 0.5)
+    upper_bound = spot * 1.5
+    payoff_prices = np.linspace(lower_bound, upper_bound, 151)
+    summary = summarize_strategy(legs, spot=spot, price_range=payoff_prices)
+    greeks = aggregate_strategy_greeks(
+        legs,
+        spot=spot,
+        time_to_expiry=float(base["time_to_expiry"]),
+        risk_free_rate=float(base["risk_free_rate"]),
+        volatility=float(base["volatility"]),
+        dividend_yield=float(base["dividend_yield"]),
+    )
+    payoff = payoff_table(legs, payoff_prices)
+    st.session_state["latest_strategy_summary"] = summary
+
+    cols = st.columns(5)
+    cols[0].metric("Entry cost", _format_optional_number(summary.entry_cost))
+    cols[1].metric("Max profit", _format_optional_number(summary.max_profit))
+    cols[2].metric("Max loss", _format_optional_number(summary.max_loss))
+    cols[3].metric("Risk", summary.risk_label)
+    cols[4].metric("Breakevens", ", ".join(f"{value:.2f}" for value in summary.breakevens) or "None")
+
+    greek_cols = st.columns(5)
+    greek_cols[0].metric("Net Delta", f"{greeks['delta']:,.4f}")
+    greek_cols[1].metric("Net Gamma", f"{greeks['gamma']:,.4f}")
+    greek_cols[2].metric("Net Vega", f"{greeks['vega'] / 100.0:,.4f} / 1%")
+    greek_cols[3].metric("Net Theta", f"{greeks['theta'] / 365.0:,.4f} / day")
+    greek_cols[4].metric("Net Rho", f"{greeks['rho'] / 100.0:,.4f} / 1%")
+
+    fig = go.Figure(
+        go.Scatter(
+            x=payoff["underlying_price"],
+            y=payoff["total_payoff"],
+            mode="lines",
+            line={"color": PALETTE["sage_dark"], "width": 3},
+            hovertemplate="Underlying: %{x:.2f}<br>Payoff: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_hline(y=0, line_color=PALETTE["taupe"], line_width=1)
+    fig.add_vline(x=spot, line_color=PALETTE["terracotta"], line_width=1)
+    fig.update_xaxes(title="Underlying at expiry")
+    fig.update_yaxes(title="Net payoff")
+    apply_plotly_theme(fig, "Strategy Payoff", height=430)
+    st.plotly_chart(fig, width="stretch")
+
+    st.dataframe(
+        payoff.iloc[::10].round(4),
+        width="stretch",
+        hide_index=True,
+        height=320,
+    )
+    st.download_button(
+        "Download strategy payoff CSV",
+        data=payoff.to_csv(index=False),
+        file_name="strategy_payoff.csv",
+        mime="text/csv",
+        key="download_strategy_payoff",
+        width="stretch",
+    )
+
+
+def _strategy_legs_from_frame(frame: pd.DataFrame) -> list[OptionLeg]:
+    legs: list[OptionLeg] = []
+    for row in frame.to_dict("records"):
+        kind = str(row.get("kind", "")).strip().lower()
+        side = str(row.get("side", "")).strip().lower()
+        strike = pd.to_numeric(row.get("strike"), errors="coerce")
+        premium = pd.to_numeric(row.get("premium"), errors="coerce")
+        quantity = pd.to_numeric(row.get("quantity"), errors="coerce")
+        if kind not in {"call", "put"} or side not in {"long", "short"}:
+            continue
+        if pd.isna(strike) or pd.isna(premium) or pd.isna(quantity):
+            continue
+        if float(strike) <= 0 or float(premium) < 0 or float(quantity) <= 0:
+            continue
+        legs.append(
+            OptionLeg(
+                kind=kind,
+                side=side,
+                strike=float(strike),
+                premium=float(premium),
+                quantity=float(quantity),
+            )
+        )
+    return legs
+
+
 def render_portfolio_lab(inputs: dict[str, object]) -> None:
     st.subheader("Portfolio Lab")
 
@@ -2401,6 +2613,7 @@ def render_portfolio_lab(inputs: dict[str, object]) -> None:
         key="download_portfolio_holdings",
         width="stretch",
     )
+    render_portfolio_attribution(report)
 
     chart_left, chart_right = st.columns([0.95, 1.05])
     with chart_left:
@@ -2479,6 +2692,89 @@ def render_portfolio_lab(inputs: dict[str, object]) -> None:
         render_explainable_chart(fig, "correlation", "Return Correlation", height=480)
 
     render_rolling_risk_and_stress(report, holdings)
+
+
+def render_portfolio_attribution(report: object) -> None:
+    st.subheader("Risk Attribution")
+    try:
+        volatility_contribution = risk_contribution(report.asset_returns, report.weights)
+        drawdown_contribution = worst_day_contribution(
+            report.asset_returns,
+            report.weights,
+            report.returns,
+        )
+    except ValueError as exc:
+        st.info(str(exc))
+        return
+
+    top_risk = volatility_contribution.iloc[0]
+    worst_day = drawdown_contribution["date"].iloc[0]
+    st.session_state["latest_portfolio_summary"] = {
+        "Annual return": f"{report.summary['annual_return']:.2%}",
+        "Annual volatility": f"{report.summary['annual_volatility']:.2%}",
+        "Max drawdown": f"{report.summary['max_drawdown']:.2%}",
+        "Top volatility contributor": (
+            f"{top_risk['ticker']} ({float(top_risk['contribution_pct']):.2%})"
+        ),
+        "Worst day": str(pd.Timestamp(worst_day).date()),
+    }
+
+    left, right = st.columns(2)
+    with left:
+        fig = go.Figure(
+            go.Bar(
+                x=volatility_contribution["contribution_pct"],
+                y=volatility_contribution["ticker"],
+                orientation="h",
+                marker_color=PALETTE["clay"],
+                hovertemplate="Ticker: %{y}<br>Vol contribution: %{x:.2%}<extra></extra>",
+            )
+        )
+        fig.update_xaxes(title="Contribution", tickformat=".0%")
+        render_explainable_chart(fig, "risk_contribution", "Volatility Contribution", height=390)
+        st.dataframe(
+            volatility_contribution,
+            width="stretch",
+            hide_index=True,
+            height=260,
+            column_config={
+                "ticker": st.column_config.TextColumn("Ticker"),
+                "weight": st.column_config.NumberColumn("Weight", format="%.2%"),
+                "annualized_volatility": st.column_config.NumberColumn("Asset vol", format="%.2%"),
+                "volatility_contribution": st.column_config.NumberColumn("Vol contribution", format="%.2%"),
+                "contribution_pct": st.column_config.NumberColumn("Share", format="%.2%"),
+            },
+        )
+
+    with right:
+        fig = go.Figure(
+            go.Bar(
+                x=drawdown_contribution["return_contribution"],
+                y=drawdown_contribution["ticker"],
+                orientation="h",
+                marker_color=[
+                    PALETTE["terracotta_dark"] if value < 0 else PALETTE["sage"]
+                    for value in drawdown_contribution["return_contribution"]
+                ],
+                hovertemplate="Ticker: %{y}<br>Contribution: %{x:.2%}<extra></extra>",
+            )
+        )
+        fig.add_vline(x=0, line_color=PALETTE["taupe"], line_width=1)
+        fig.update_xaxes(title="Worst-day return contribution", tickformat=".0%")
+        render_explainable_chart(fig, "worst_day_contribution", "Worst-Day Contribution", height=390)
+        st.dataframe(
+            drawdown_contribution,
+            width="stretch",
+            hide_index=True,
+            height=260,
+            column_config={
+                "date": st.column_config.DateColumn("Date"),
+                "ticker": st.column_config.TextColumn("Ticker"),
+                "asset_return": st.column_config.NumberColumn("Asset return", format="%.2%"),
+                "weight": st.column_config.NumberColumn("Weight", format="%.2%"),
+                "return_contribution": st.column_config.NumberColumn("Contribution", format="%.2%"),
+            },
+        )
 
 
 def render_rolling_risk_and_stress(report: object, holdings: pd.DataFrame) -> None:
@@ -2618,6 +2914,53 @@ def render_rolling_risk_and_stress(report: object, holdings: pd.DataFrame) -> No
         render_explainable_chart(fig, "stress_test", "Scenario Stress Impact", height=420)
 
     render_stress_table(stress)
+
+
+def render_report_mode(inputs: dict[str, object]) -> None:
+    st.subheader("Report Mode")
+    price, greeks = option_metrics(**inputs["base"])
+    snapshot = build_research_snapshot(inputs, price, greeks)
+    warnings = build_input_warnings(inputs)
+
+    with st.spinner("Building model comparison for report..."):
+        models = model_snapshot(
+            **inputs["base"],
+            binomial_steps=inputs["binomial_steps"],
+            heston_paths=inputs["mc_paths"],
+            heston_steps=inputs["mc_steps"],
+            seed=inputs["seed"],
+        )
+
+    memo = build_research_memo(
+        inputs,
+        snapshot=snapshot,
+        warnings=warnings,
+        model_prices=models,
+        strategy_summary=st.session_state.get("latest_strategy_summary"),
+        portfolio_summary=st.session_state.get("latest_portfolio_summary"),
+    )
+
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("Report price", f"{price:,.4f}")
+    metric_cols[1].metric("Warnings", f"{len(warnings)}")
+    metric_cols[2].metric(
+        "Strategy",
+        "Included" if st.session_state.get("latest_strategy_summary") is not None else "Not run",
+    )
+    metric_cols[3].metric(
+        "Portfolio",
+        "Included" if st.session_state.get("latest_portfolio_summary") is not None else "Not run",
+    )
+
+    st.download_button(
+        "Download research memo",
+        data=memo,
+        file_name="quant_finance_lab_memo.md",
+        mime="text/markdown",
+        key="download_research_memo",
+        width="stretch",
+    )
+    st.markdown(memo)
 
 
 def render_delta_hedge(inputs: dict[str, object]) -> None:
